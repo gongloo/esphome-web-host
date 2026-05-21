@@ -30,7 +30,6 @@ external_components:
 
 # Enable standard web server dependencies
 web_server:
-  version: 3
   local: true
 
 # Map and host your custom web assets
