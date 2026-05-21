@@ -84,10 +84,3 @@ Embed version numbers dynamically inside your HTML/JS:
 ```
 
 It will be replaced at compile-time with the version specified under your YAML's `esphome.project.version` block.
-
----
-
-## 👨‍💻 Author and License
-
-- **Author**: [@gongloo]
-- **License**: MIT
