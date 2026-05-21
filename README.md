@@ -35,16 +35,16 @@ web_server:
 # Map and host your custom web assets
 web_host:
   - id: ui_page
-    html_file: "data/htdocs/index.html"
+    file: "data/htdocs/index.html"
     url: "/dashboard"
   - id: ui_manifest
-    html_file: "data/htdocs/manifest.webmanifest"
+    file: "data/htdocs/manifest.webmanifest"
     url: "/manifest.webmanifest"
   - id: ui_sw
-    html_file: "data/htdocs/sw.js"
+    file: "data/htdocs/sw.js"
     url: "/sw.js"
   - id: ui_favicon
-    html_file: "data/htdocs/favicon.ico"
+    file: "data/htdocs/favicon.ico"
     url: "/favicon.ico"
 ```
 
@@ -55,7 +55,7 @@ web_host:
 | Variable | Type | Requirement | Description |
 | :--- | :--- | :--- | :--- |
 | **`id`** | ID | **Required** | The internal identifier for the asset instance. |
-| **`html_file`** | String / Path | **Required** | The local file path to compile (relative to your ESPHome config directory or absolute). |
+| **`file`** | String / Path | **Required** | The local file path to compile (relative to your ESPHome config directory or absolute). |
 | **`url`** | String | **Required** | The URL endpoint path where the asset will be served (e.g. `/`, `/dashboard`). |
 | **`content_type`** | String | *Optional* | Mime type of the resource. By default, it is auto-detected from the file extension. |
 

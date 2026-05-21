@@ -11,7 +11,7 @@ MULTI_CONF = True
 web_host_ns = cg.esphome_ns.namespace("web_host")
 WebHostComponent = web_host_ns.class_("WebHostComponent", cg.Component)
 
-CONF_HTML_FILE = "html_file"
+CONF_FILE = "file"
 CONF_URL = "url"
 CONF_CONTENT_TYPE = "content_type"
 
@@ -36,18 +36,18 @@ def detect_content_type(filepath):
     else:
         return "application/octet-stream"
 
-def validate_html_file(value):
+def validate_file(value):
     from esphome.core import CORE
     path = cv.string(value)
     if not os.path.isabs(path):
         path = os.path.join(CORE.config_dir, path)
     if not os.path.exists(path):
-        raise cv.Invalid(f"HTML/resource file not found at path: {path}")
+        raise cv.Invalid(f"Resource file not found at path: {path}")
     return value
 
 CONFIG_SCHEMA = cv.Schema({
     cv.GenerateID(): cv.declare_id(WebHostComponent),
-    cv.Required(CONF_HTML_FILE): validate_html_file,
+    cv.Required(CONF_FILE): validate_file,
     cv.Required(CONF_URL): cv.string,
     cv.Optional(CONF_CONTENT_TYPE): cv.string,
 }).extend(cv.COMPONENT_SCHEMA)
@@ -82,19 +82,19 @@ def get_mdi_path(icon_name):
 async def to_code(config):
     from esphome.core import CORE
     
-    html_file = config[CONF_HTML_FILE]
+    file_path = config[CONF_FILE]
     url = config[CONF_URL]
     
-    if not os.path.isabs(html_file):
-        html_file = os.path.join(CORE.config_dir, html_file)
+    if not os.path.isabs(file_path):
+        file_path = os.path.join(CORE.config_dir, file_path)
         
     if CONF_CONTENT_TYPE in config:
         content_type = config[CONF_CONTENT_TYPE]
     else:
-        content_type = detect_content_type(html_file)
+        content_type = detect_content_type(file_path)
         
     # Read resource as bytes
-    with open(html_file, "rb") as f:
+    with open(file_path, "rb") as f:
         file_content = f.read()
 
     # Preprocess all <svg ... data-mdi="icon_name">...</svg> elements for HTML files
