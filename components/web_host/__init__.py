@@ -75,9 +75,33 @@ def resolve_source_path(source_config):
     else:
         raise NotImplementedError()
 
-def validate_web_host(config):
+def get_declaring_yaml_dir(config):
+    for key in config:
+        esp_range = getattr(key, "esp_range", None)
+        if esp_range is not None:
+            doc = esp_range.start_mark.document
+            if doc:
+                return os.path.dirname(os.path.abspath(doc))
+    return None
+
+def resolve_file_path(config, file_path, source_dir):
     from esphome.core import CORE
-    
+
+    if source_dir is not None:
+        return os.path.join(source_dir, file_path)
+
+    declaring_yaml_dir = get_declaring_yaml_dir(config)
+    if not os.path.isabs(file_path) and declaring_yaml_dir is not None:
+        path = os.path.join(declaring_yaml_dir, file_path)
+        if os.path.exists(path):
+            return path
+
+    if not os.path.isabs(file_path):
+        return os.path.join(CORE.config_dir, file_path)
+
+    return file_path
+
+def validate_web_host(config):
     if CONF_SOURCE in config:
         source_dir = resolve_source_path(config[CONF_SOURCE])
     else:
@@ -85,13 +109,7 @@ def validate_web_host(config):
         
     for file_config in config[CONF_FILES]:
         file_path = file_config[CONF_FILE]
-        if source_dir is not None:
-            resolved_path = os.path.join(source_dir, file_path)
-        else:
-            if not os.path.isabs(file_path):
-                resolved_path = os.path.join(CORE.config_dir, file_path)
-            else:
-                resolved_path = file_path
+        resolved_path = resolve_file_path(config, file_path, source_dir)
                 
         if not os.path.exists(resolved_path):
             raise cv.Invalid(f"Resource file not found at path: {resolved_path}")
@@ -152,13 +170,7 @@ async def to_code(config):
         file_path = file_config[CONF_FILE]
         url = file_config[CONF_URL]
         
-        if source_dir is not None:
-            resolved_path = os.path.join(source_dir, file_path)
-        else:
-            if not os.path.isabs(file_path):
-                resolved_path = os.path.join(CORE.config_dir, file_path)
-            else:
-                resolved_path = file_path
+        resolved_path = resolve_file_path(config, file_path, source_dir)
             
         if CONF_CONTENT_TYPE in file_config:
             content_type = file_config[CONF_CONTENT_TYPE]
