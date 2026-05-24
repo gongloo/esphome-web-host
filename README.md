@@ -34,29 +34,81 @@ web_server:
 
 # Map and host your custom web assets
 web_host:
-  - id: ui_page
-    file: "data/htdocs/index.html"
-    url: "/dashboard"
-  - id: ui_manifest
-    file: "data/htdocs/manifest.webmanifest"
-    url: "/manifest.webmanifest"
-  - id: ui_sw
-    file: "data/htdocs/sw.js"
-    url: "/sw.js"
-  - id: ui_favicon
-    file: "data/htdocs/favicon.ico"
-    url: "/favicon.ico"
+  source: "." # Resolve paths relative to the current folder (default)
+  files:
+    - id: ui_page
+      file: "data/htdocs/index.html"
+      url: "/dashboard"
+    - id: ui_manifest
+      file: "data/htdocs/manifest.webmanifest"
+      url: "/manifest.webmanifest"
+    - id: ui_sw
+      file: "data/htdocs/sw.js"
+      url: "/sw.js"
+    - id: ui_favicon
+      file: "data/htdocs/favicon.ico"
+      url: "/favicon.ico"
+```
+
+### 📦 Automatic Path & Git Repository Resolution
+
+The `web_host` component supports a powerful global **`source`** parameter that accepts local directory strings or full Git repository targets (e.g., shorthand `github://` or explicit Git maps). 
+
+When a Git target is provided, ESPHome will **automatically clone or update the repository** to its local cache at compile time, and resolve all relative asset files cleanly from that cache!
+
+#### Example: Sourcing assets dynamically from a local workspace
+```yaml
+web_host:
+  source: "../../OutEquipAC"
+  files:
+    - id: ui_page
+      file: "data/htdocs/thermostat.html"
+      url: "/thermostat"
+```
+
+#### Example: Sourcing assets dynamically from a remote GitHub repository
+```yaml
+web_host:
+  source: "github://gongloo/OutEquipAC@main"
+  files:
+    - id: ui_page
+      file: "data/htdocs/thermostat.html"
+      url: "/thermostat"
+```
+
+#### Example: Hosting files from multiple sources simultaneously
+```yaml
+web_host:
+  - source: "../../OutEquipAC"
+    files:
+      - id: ui_page
+        file: "data/htdocs/thermostat.html"
+        url: "/thermostat"
+  - source: "../../HyHeat"
+    files:
+      - id: hyheat_readme
+        file: "README.md"
+        url: "/hyheat-readme"
 ```
 
 ---
 
 ## ⚙️ Configuration Variables
 
+### Global Configuration
+
+| Variable | Type | Requirement | Description |
+| :--- | :--- | :--- | :--- |
+| **`source`** | Source Schema | *Optional* | The base path or Git source (local path, Git URL, or `github://` shorthand). Defaults to `.` (the ESPHome config folder). |
+| **`files`** | List of Files | **Required** | The list of static asset files to map and compile under this source. |
+
+### File Definition (`files:`)
+
 | Variable | Type | Requirement | Description |
 | :--- | :--- | :--- | :--- |
 | **`id`** | ID | **Required** | The internal identifier for the asset instance. |
-| **`file`** | String / Path | **Required** | The local file path to compile (relative to your ESPHome config directory or absolute). |
-| **`url`** | String | **Required** | The URL endpoint path where the asset will be served (e.g. `/`, `/dashboard`). |
+| **`file`** | String / Path | **Required** | The file path to compile (resolved relative to the global `source` folder). |
+| **`url`** | String | **Required** | The URL endpoint path where the asset will be served (e.g. `/`, `/thermostat`). |
 | **`content_type`** | String | *Optional* | Mime type of the resource. By default, it is auto-detected from the file extension. |
 
 ---
