@@ -1,8 +1,11 @@
 import os
 import gzip
+import logging
 import esphome.codegen as cg
 import esphome.config_validation as cv
 from esphome.const import CONF_ID
+
+_LOGGER = logging.getLogger(__name__)
 
 CODEOWNERS = ["@gongloo"]
 DEPENDENCIES = ["web_server_base"]
@@ -135,7 +138,10 @@ def get_mdi_path(icon_name):
     # Dynamic compile-time MDI SVG path downloader.
     # Natively calls ESPHome's internal download_gh_svg utility to pull, cache, and resolve
     # icons inside the .esphome workspace, eliminating code duplication!
-    from esphome.components.image import download_gh_svg, SOURCE_MDI
+    try:
+        from esphome.components.file.image import download_gh_svg, SOURCE_MDI
+    except ImportError:
+        from esphome.components.image import download_gh_svg, SOURCE_MDI
     import re
     
     icon_name = "".join(c for c in icon_name.lower() if c.isalnum() or c in "-_")
@@ -204,6 +210,7 @@ async def to_code(config):
                         path_data = get_mdi_path(icon_name)
                         return f'{opening_tag}<path d="{path_data}"/></svg>'
                     except Exception as e:
+                        _LOGGER.warning("Failed to inline MDI icon '%s': %s", icon_name, e)
                         return match.group(0)
                         
                 html_text = re.sub(pattern, mdi_replacer, html_text, flags=re.DOTALL)
