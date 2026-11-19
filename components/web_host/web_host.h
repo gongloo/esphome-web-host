@@ -36,16 +36,17 @@ class WebHostComponent : public Component {
         bool canHandle(AsyncWebServerRequest *request) const override {
           if (request->method() != HTTP_GET)
             return false;
+#ifdef USE_ESP32
           char url_buf[AsyncWebServerRequest::URL_BUF_SIZE];
-          std::string request_url = request->url_to(url_buf);
-          return request_url == parent_->get_url();
+          return request->url_to(url_buf) == parent_->get_url();
+#else
+          return request->url() == parent_->get_url().c_str();
+#endif
         }
 
         void handleRequest(AsyncWebServerRequest *request) override {
-          std::string html(reinterpret_cast<const char *>(parent_->get_html_data()),
-                           parent_->get_html_size());
-          AsyncWebServerResponse *response =
-              request->beginResponse(200, parent_->get_content_type().c_str(), html);
+          AsyncWebServerResponse *response = request->beginResponse(
+              200, parent_->get_content_type().c_str(), parent_->get_html_data(), parent_->get_html_size());
           if (parent_->is_gzipped()) {
             response->addHeader("Content-Encoding", "gzip");
           }
