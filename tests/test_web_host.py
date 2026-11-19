@@ -409,3 +409,44 @@ class TestToCodeGeneration:
 
         payload, _ = _extract_generated_payload(CORE.build_path / "src" / "bad_enc_web_host.h")
         assert payload == raw_bytes or gzip.decompress(payload) == raw_bytes
+
+
+class TestHtmlCssJsMinification:
+    def test_html_strips_comments_and_preserves_pre_and_entities(self):
+        minify_mod = importlib.import_module("web_host.minify")
+        html = (
+            "<!DOCTYPE html>\n"
+            "<html>\n"
+            "  <!-- strip this comment -->\n"
+            "  <body>\n"
+            "    <p>Temp: 72&deg;F</p>\n"
+            "    <pre>  keep   spacing\n  here  </pre>\n"
+            "  </body>\n"
+            "</html>\n"
+        )
+        out = minify_mod.minify_html(html)
+        assert "strip this comment" not in out
+        assert "&deg;" in out
+        assert "<pre>  keep   spacing\n  here  </pre>" in out
+        assert "<!DOCTYPE html><html><body><p>Temp: 72&deg;F</p>" in out
+
+    def test_css_and_js_minification(self):
+        minify_mod = importlib.import_module("web_host.minify")
+        css = "/* comment */\nbody {\n  color: #fff;\n  margin: 0px;\n}\n"
+        js = "// line comment\nfunction add(a, b) {\n  return a + b;\n}\n"
+        min_css = minify_mod.minify_css(css)
+        min_js = minify_mod.minify_js(js)
+        assert "comment" not in min_css
+        assert "body{color:#fff;margin:0px}" in min_css or "body{color:#fff;margin:0}" in min_css
+        assert "line comment" not in min_js
+        assert "function add(a,b){return a+b;}" in min_js
+
+    def test_offline_git_fallback_returns_original(self):
+        minify_mod = importlib.import_module("web_host.minify")
+        minify_mod._MODULE_CACHE.clear()
+        js = "// comment\nconst x = 1;\n"
+        css = "/* comment */\nbody { color: red; }\n"
+        with patch("esphome.git.clone_or_update", side_effect=RuntimeError("offline")):
+            assert minify_mod.minify_js(js) == js
+            assert minify_mod.minify_css(css) == css
+        minify_mod._MODULE_CACHE.clear()
