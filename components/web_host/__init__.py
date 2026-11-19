@@ -218,7 +218,7 @@ async def to_code(config):
             except UnicodeDecodeError:
                 pass
 
-        gzipped_bytes = gzip.compress(file_content)
+        gzipped_bytes = gzip.compress(file_content, compresslevel=9, mtime=0)
         hex_bytes_str = ", ".join(f"0x{b:02x}" for b in gzipped_bytes)
 
         # Generate a unique variable name based on the C++ variable ID to avoid collisions
