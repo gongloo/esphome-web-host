@@ -1,5 +1,6 @@
 import os
 import gzip
+import json
 import logging
 import esphome.codegen as cg
 import esphome.config_validation as cv
@@ -19,6 +20,7 @@ CONF_FILES = "files"
 CONF_URL = "url"
 CONF_SOURCE = "source"
 CONF_CONTENT_TYPE = "content_type"
+CONF_MINIFY = "minify"
 
 from esphome.const import (
     CONF_PATH,
@@ -124,11 +126,13 @@ FILE_SCHEMA = cv.Schema({
     cv.Required(CONF_FILE): cv.string,
     cv.Required(CONF_URL): cv.string,
     cv.Optional(CONF_CONTENT_TYPE): cv.string,
+    cv.Optional(CONF_MINIFY): cv.boolean,
 }).extend(cv.COMPONENT_SCHEMA)
 
 CONFIG_SCHEMA = cv.All(
     cv.Schema({
         cv.Optional(CONF_SOURCE): cv.SOURCE_SCHEMA,
+        cv.Optional(CONF_MINIFY, default=True): cv.boolean,
         cv.Required(CONF_FILES): cv.ensure_list(FILE_SCHEMA),
     }),
     validate_web_host,
@@ -217,6 +221,20 @@ async def to_code(config):
                 file_content = html_text.encode("utf-8")
             except UnicodeDecodeError:
                 pass
+
+        should_minify = file_config.get(CONF_MINIFY, config[CONF_MINIFY])
+        if should_minify and (
+            content_type == "application/json"
+            or content_type.endswith("+json")
+            or os.path.splitext(resolved_path)[1].lower() in (".json", ".webmanifest")
+        ):
+            try:
+                parsed_json = json.loads(file_content.decode("utf-8"))
+                file_content = json.dumps(
+                    parsed_json, separators=(",", ":"), ensure_ascii=False
+                ).encode("utf-8")
+            except (UnicodeDecodeError, json.JSONDecodeError) as e:
+                _LOGGER.warning("Failed to minify JSON '%s': %s", resolved_path, e)
 
         gzipped_bytes = gzip.compress(file_content, compresslevel=9, mtime=0)
         use_gzip = len(gzipped_bytes) < len(file_content)
