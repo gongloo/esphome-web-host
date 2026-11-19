@@ -1,0 +1,9 @@
+{
+  "feature": "web_host",
+  "enabled": true,
+  "items": [
+    "alpha",
+    "beta",
+    "gamma"
+  ]
+}

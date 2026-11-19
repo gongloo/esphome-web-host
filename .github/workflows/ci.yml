@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  schedule:
+    # Weekly run to catch breaking changes in new ESPHome releases
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+jobs:
+  unit-tests:
+    name: Python Unit Tests (pytest)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Install ESPHome and pytest
+        run: |
+          python -m pip install --upgrade pip
+          pip install esphome pytest
+
+      - name: Print ESPHome version
+        run: esphome version
+
+      - name: Run pytest
+        run: pytest tests/ -v
+
+  compile-tests:
+    name: Validate & Compile (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: ESP32 (ESP-IDF)
+            file: tests/test_esp32_idf.yaml
+          - name: ESP32 (Arduino)
+            file: tests/test_esp32_arduino.yaml
+          - name: ESP8266 (Arduino)
+            file: tests/test_esp8266.yaml
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Cache PlatformIO & ESPHome build toolchains
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio
+            tests/.esphome
+          key: ${{ runner.os }}-esphome-${{ matrix.name }}-${{ hashFiles('tests/*.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-esphome-${{ matrix.name }}-
+
+      - name: Install ESPHome
+        run: |
+          python -m pip install --upgrade pip
+          pip install esphome
+
+      - name: Print ESPHome version
+        run: esphome version
+
+      - name: Validate ESPHome configuration
+        run: esphome config ${{ matrix.file }}
+
+      - name: Compile ESPHome firmware
+        run: esphome compile ${{ matrix.file }}

@@ -1,0 +1,10 @@
+web_host:
+  - files:
+      # Resolved relative to declaring package YAML directory (tests/packages/)
+      - id: web_pkg_asset
+        file: "pkg_asset.txt"
+        url: "/pkg-asset"
+      # Falls back to CORE.config_dir (tests/) when not found in tests/packages/
+      - id: web_pkg_fallback_css
+        file: "fixtures/styles.css"
+        url: "/styles.css"

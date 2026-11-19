@@ -1,0 +1,57 @@
+esphome:
+  name: web-host-test
+  project:
+    name: gongloo.web-host-test
+    version: "1.2.3"
+
+external_components:
+  - source:
+      type: local
+      path: ../components
+    components: [web_host]
+
+wifi:
+  ssid: "TestSSID"
+  password: "TestPassword"
+
+logger:
+
+web_server:
+  local: true
+
+packages:
+  pkg_assets: !include packages/pkg_web_host.yaml
+
+web_host:
+  - source: "fixtures"
+    minify: true
+    files:
+      - id: web_index
+        file: "index.html"
+        url: "/"
+      - id: web_js
+        file: "app.js"
+        url: "/app.js"
+      - id: web_manifest
+        file: "manifest.webmanifest"
+        url: "/manifest.webmanifest"
+        content_type: "application/manifest+json"
+      - id: web_config_json
+        file: "config.json"
+        url: "/config.json"
+      - id: web_raw_json
+        file: "raw.json"
+        url: "/raw.json"
+        minify: false
+      - id: web_tiny_bin
+        file: "tiny.bin"
+        url: "/tiny.bin"
+  - source:
+      type: local
+      path: "fixtures"
+    minify: false
+    files:
+      - id: web_override_minify_on
+        file: "config.json"
+        url: "/config-min.json"
+        minify: true
