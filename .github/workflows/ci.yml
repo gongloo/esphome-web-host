@@ -22,7 +22,6 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.13"
-          cache: "pip"
 
       - name: Install ESPHome and pytest
         run: |
@@ -57,7 +56,6 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.13"
-          cache: "pip"
 
       - name: Cache PlatformIO & ESPHome build toolchains
         uses: actions/cache@v4
