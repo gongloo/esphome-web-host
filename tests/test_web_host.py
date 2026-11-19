@@ -410,6 +410,33 @@ class TestToCodeGeneration:
         payload, _ = _extract_generated_payload(CORE.build_path / "src" / "bad_enc_web_host.h")
         assert payload == raw_bytes or gzip.decompress(payload) == raw_bytes
 
+    def test_build_info_cache_invalidated_only_when_asset_changes(self, tmp_path):
+        CORE.config_path = tmp_path / "device.yaml"
+        asset = tmp_path / "app.js"
+        asset.write_text("console.log('v1');", encoding="utf-8")
+
+        config = web_host.CONFIG_SCHEMA(
+            {"files": [{"id": "app_js", "file": "app.js", "url": "/app.js", "minify": False}]}
+        )
+        self._run_to_code(config)
+
+        header_path = CORE.build_path / "src" / "app_js_web_host.h"
+        build_info_path = CORE.build_path / "build_info.json"
+        build_info_path.write_text('{"config_hash": 1234}\n', encoding="utf-8")
+        initial_mtime_ns = header_path.stat().st_mtime_ns
+
+        # Re-running with unchanged asset preserves header mtime and build_info.json
+        self._run_to_code(config)
+        assert build_info_path.exists()
+        assert header_path.stat().st_mtime_ns == initial_mtime_ns
+
+        # Updating the included asset updates the header and invalidates build_info.json
+        asset.write_text("console.log('v2');", encoding="utf-8")
+        self._run_to_code(config)
+        assert not build_info_path.exists()
+        payload, _ = _extract_generated_payload(header_path)
+        assert payload.decode("utf-8") == "console.log('v2');"
+
 
 class TestHtmlCssJsMinification:
     def test_html_strips_comments_and_preserves_pre_and_entities(self):

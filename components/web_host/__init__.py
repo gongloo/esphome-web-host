@@ -247,9 +247,25 @@ constexpr size_t {var_id}_WEB_HOST_DATA_SIZE = {len(payload_bytes)};
         os.makedirs(build_dir, exist_ok=True)
         header_filename = f"{var_id}_web_host.h"
         output_header_path = os.path.join(build_dir, header_filename)
-        
-        with open(output_header_path, "w", encoding="utf-8") as f:
-            f.write(header_content)
+
+        header_changed = True
+        if os.path.exists(output_header_path):
+            with open(output_header_path, "r", encoding="utf-8") as f:
+                if f.read() == header_content:
+                    header_changed = False
+
+        if header_changed:
+            with open(output_header_path, "w", encoding="utf-8") as f:
+                f.write(header_content)
+
+            # Invalidate ESPHome's build_info cache so build_info_data.cpp and
+            # build_info.json are regenerated with a fresh build timestamp even
+            # when only included web assets changed (no YAML changes).
+            build_info_path = os.path.join(CORE.build_path, "build_info.json")
+            try:
+                os.remove(build_info_path)
+            except FileNotFoundError:
+                pass
             
         # Include header dynamically in ESPHome build
         cg.add_global(cg.RawStatement(f'#include "{header_filename}"'))
