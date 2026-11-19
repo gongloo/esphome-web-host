@@ -1,10 +1,10 @@
 import os
 import gzip
-import json
 import logging
 import esphome.codegen as cg
 import esphome.config_validation as cv
 from esphome.const import CONF_ID
+from .minify import minify_content
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -223,18 +223,8 @@ async def to_code(config):
                 pass
 
         should_minify = file_config.get(CONF_MINIFY, config[CONF_MINIFY])
-        if should_minify and (
-            content_type == "application/json"
-            or content_type.endswith("+json")
-            or os.path.splitext(resolved_path)[1].lower() in (".json", ".webmanifest")
-        ):
-            try:
-                parsed_json = json.loads(file_content.decode("utf-8"))
-                file_content = json.dumps(
-                    parsed_json, separators=(",", ":"), ensure_ascii=False
-                ).encode("utf-8")
-            except (UnicodeDecodeError, json.JSONDecodeError) as e:
-                _LOGGER.warning("Failed to minify JSON '%s': %s", resolved_path, e)
+        if should_minify:
+            file_content = minify_content(file_content, content_type, resolved_path)
 
         gzipped_bytes = gzip.compress(file_content, compresslevel=9, mtime=0)
         use_gzip = len(gzipped_bytes) < len(file_content)

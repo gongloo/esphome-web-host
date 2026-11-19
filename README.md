@@ -10,7 +10,7 @@ Typically, ESPHome's web server is restricted to displaying standard entity dash
 
 - **Declarative Resource Mapping**: Map any local static file (HTML, CSS, JS, manifest, icons, images) to any URL route via clean YAML configuration.
 - **On-the-Fly Gzip Compression**: Assets are deterministically compressed during compile-time (`mtime=0`) and embedded as byte arrays in `PROGMEM` (Flash memory) whenever compression reduces the payload size, drastically reducing runtime RAM usage and flash size.
-- **Automatic JSON Minification**: `.json` and `.webmanifest` files (and JSON content types) are automatically minified at compile time (configurable via `minify`, enabled by default).
+- **Automatic Asset Minification**: HTML, CSS, JS, JSON, and `.webmanifest` files are automatically minified at compile time (configurable via `minify`, enabled by default) using Python's stdlib (`json`, `html.parser`) and git-cached `rjsmin` / `rcssmin`.
 - **Dynamic MDI SVG Downloader & Inliner**: Natively pulls requested Material Design Icons using ESPHome's GitHub cache, parses their path definitions, and injects them directly into your HTML code before compilation.
 - **Configurable Version Substitutions**: Automatically replaces `${version}` placeholders in your HTML/resource code with your ESPHome project's declared version string.
 - **Asynchronous Processing**: Leverages `ESPAsyncWebServer` for lightning-fast concurrent requests without blocking sensor loops or automation routines.
@@ -108,7 +108,7 @@ web_host:
 | Variable     | Type          | Requirement  | Description                                                                                                               |
 | :----------- | :------------ | :----------- | :------------------------------------------------------------------------------------------------------------------------ |
 | **`source`** | Source Schema | _Optional_   | The base path or Git source (local path, Git URL, or `github://` shorthand). Defaults to `.` (the ESPHome config folder). |
-| **`minify`** | Boolean       | _Optional_   | Enable compile-time minification for supported assets (currently JSON / `.webmanifest`). Defaults to `true`.              |
+| **`minify`** | Boolean       | _Optional_   | Enable compile-time minification for HTML, CSS, JS, JSON, and `.webmanifest` assets. Defaults to `true`.                  |
 | **`files`**  | List of Files | **Required** | The list of static asset files to map and compile under this source.                                                      |
 
 ### File Definition (`files:`)
