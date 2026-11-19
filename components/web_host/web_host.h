@@ -15,8 +15,13 @@ namespace web_host {
 
 class WebHostComponent : public Component {
  public:
-  WebHostComponent(const std::string &url, const std::string &content_type, const uint8_t *html_data, size_t html_size)
-      : url_(url), content_type_(content_type), html_data_(html_data), html_size_(html_size) {}
+  WebHostComponent(const std::string &url, const std::string &content_type, const uint8_t *html_data, size_t html_size,
+                   bool is_gzipped = true)
+      : url_(url),
+        content_type_(content_type),
+        html_data_(html_data),
+        html_size_(html_size),
+        is_gzipped_(is_gzipped) {}
 
   void setup() override {
 #ifdef USE_WEBSERVER
@@ -41,7 +46,9 @@ class WebHostComponent : public Component {
                            parent_->get_html_size());
           AsyncWebServerResponse *response =
               request->beginResponse(200, parent_->get_content_type().c_str(), html);
-          response->addHeader("Content-Encoding", "gzip");
+          if (parent_->is_gzipped()) {
+            response->addHeader("Content-Encoding", "gzip");
+          }
           request->send(response);
         }
       };
@@ -57,12 +64,14 @@ class WebHostComponent : public Component {
   const std::string &get_content_type() const { return this->content_type_; }
   const uint8_t *get_html_data() const { return this->html_data_; }
   size_t get_html_size() const { return this->html_size_; }
+  bool is_gzipped() const { return this->is_gzipped_; }
 
  protected:
   std::string url_;
   std::string content_type_;
   const uint8_t *html_data_;
   size_t html_size_;
+  bool is_gzipped_;
 };
 
 }  // namespace web_host

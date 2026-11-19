@@ -219,7 +219,9 @@ async def to_code(config):
                 pass
 
         gzipped_bytes = gzip.compress(file_content, compresslevel=9, mtime=0)
-        hex_bytes_str = ", ".join(f"0x{b:02x}" for b in gzipped_bytes)
+        use_gzip = len(gzipped_bytes) < len(file_content)
+        payload_bytes = gzipped_bytes if use_gzip else file_content
+        hex_bytes_str = ", ".join(f"0x{b:02x}" for b in payload_bytes)
 
         # Generate a unique variable name based on the C++ variable ID to avoid collisions
         var_id = str(file_config[CONF_ID])
@@ -229,8 +231,8 @@ async def to_code(config):
 #include <stddef.h>
 
 // Automatically generated during ESPHome compile phase. Do not edit.
-constexpr uint8_t {var_id}_WEB_HOST_GZ[] PROGMEM = {{{hex_bytes_str}}};
-constexpr size_t {var_id}_WEB_HOST_GZ_SIZE = {len(gzipped_bytes)};
+constexpr uint8_t {var_id}_WEB_HOST_DATA[] PROGMEM = {{{hex_bytes_str}}};
+constexpr size_t {var_id}_WEB_HOST_DATA_SIZE = {len(payload_bytes)};
 """
 
         build_dir = os.path.join(CORE.build_path, "src")
@@ -248,7 +250,8 @@ constexpr size_t {var_id}_WEB_HOST_GZ_SIZE = {len(gzipped_bytes)};
             file_config[CONF_ID],
             url,
             content_type,
-            cg.RawExpression(f"{var_id}_WEB_HOST_GZ"),
-            cg.RawExpression(f"{var_id}_WEB_HOST_GZ_SIZE")
+            cg.RawExpression(f"{var_id}_WEB_HOST_DATA"),
+            cg.RawExpression(f"{var_id}_WEB_HOST_DATA_SIZE"),
+            use_gzip,
         )
         await cg.register_component(var, file_config)
