@@ -1,0 +1,6 @@
+{
+  "name": "ESPHome Web Host Test",
+  "short_name": "WebHost",
+  "start_url": "/",
+  "display": "standalone"
+}

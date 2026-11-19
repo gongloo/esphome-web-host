@@ -1,0 +1,11 @@
+body {
+  font-family: sans-serif;
+  margin: 0;
+  padding: 1rem;
+  background-color: #ffffff;
+  color: #111111;
+}
+.icon {
+  width: 24px;
+  height: 24px;
+}

@@ -1,0 +1,1 @@
+Package asset resolved relative to declaring YAML directory.
