@@ -181,6 +181,58 @@ class TestSchemaValidation:
                 }
             )
 
+    def test_cache_control_validation_and_overrides(self, tmp_path):
+        CORE.config_path = tmp_path / "device.yaml"
+        asset = tmp_path / "index.html"
+        asset.write_text("<h1>Hello</h1>", encoding="utf-8")
+
+        validated = web_host.CONFIG_SCHEMA(
+            {
+                "cache_control": "public, max-age=3600",
+                "files": [
+                    {"id": "web_default", "file": "index.html", "url": "/"},
+                    {
+                        "id": "web_no_cache",
+                        "file": "index.html",
+                        "url": "/sw.js",
+                        "cache_control": "no-cache",
+                    },
+                    {
+                        "id": "web_opt_out",
+                        "file": "index.html",
+                        "url": "/opt-out",
+                        "cache_control": "",
+                    },
+                ],
+            }
+        )
+        assert validated[web_host.CONF_CACHE_CONTROL] == "public, max-age=3600"
+        assert web_host.CONF_CACHE_CONTROL not in validated[web_host.CONF_FILES][0]
+        assert validated[web_host.CONF_FILES][1][web_host.CONF_CACHE_CONTROL] == "no-cache"
+        assert validated[web_host.CONF_FILES][2][web_host.CONF_CACHE_CONTROL] == ""
+
+        for bad_value in ("no-cache\r\nX-Injected: 1", "no-cache\n", "no-cache\r"):
+            with pytest.raises(cv.Invalid, match="newline"):
+                web_host.CONFIG_SCHEMA(
+                    {
+                        "cache_control": bad_value,
+                        "files": [{"id": "web_bad", "file": "index.html", "url": "/"}],
+                    }
+                )
+            with pytest.raises(cv.Invalid, match="newline"):
+                web_host.CONFIG_SCHEMA(
+                    {
+                        "files": [
+                            {
+                                "id": "web_bad_file",
+                                "file": "index.html",
+                                "url": "/",
+                                "cache_control": bad_value,
+                            }
+                        ]
+                    }
+                )
+
 
 class TestMdiInlining:
     def test_esphome_mdi_import_and_path_extraction(self, tmp_path):
@@ -436,6 +488,40 @@ class TestToCodeGeneration:
         assert not build_info_path.exists()
         payload, _ = _extract_generated_payload(header_path)
         assert payload.decode("utf-8") == "console.log('v2');"
+
+    def test_cache_control_codegen_defaults_and_overrides(self, tmp_path):
+        CORE.config_path = tmp_path / "device.yaml"
+        (tmp_path / "a.txt").write_text("a", encoding="utf-8")
+
+        default_config = web_host.CONFIG_SCHEMA(
+            {"files": [{"id": "cc_default", "file": "a.txt", "url": "/default"}]}
+        )
+        _, mock_new_pvar, _ = self._run_to_code(default_config)
+        assert mock_new_pvar.call_args[0][6] == ""
+
+        override_config = web_host.CONFIG_SCHEMA(
+            {
+                "cache_control": "public, max-age=3600",
+                "files": [
+                    {"id": "cc_inherit", "file": "a.txt", "url": "/inherit"},
+                    {
+                        "id": "cc_override",
+                        "file": "a.txt",
+                        "url": "/override",
+                        "cache_control": "no-cache",
+                    },
+                    {
+                        "id": "cc_disable",
+                        "file": "a.txt",
+                        "url": "/disable",
+                        "cache_control": "",
+                    },
+                ],
+            }
+        )
+        _, mock_new_pvar, _ = self._run_to_code(override_config)
+        cache_controls = [call.args[6] for call in mock_new_pvar.call_args_list]
+        assert cache_controls == ["public, max-age=3600", "no-cache", ""]
 
 
 class TestHtmlCssJsMinification:

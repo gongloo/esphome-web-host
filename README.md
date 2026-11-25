@@ -107,19 +107,21 @@ web_host:
 
 | Variable     | Type          | Requirement  | Description                                                                                                               |
 | :----------- | :------------ | :----------- | :------------------------------------------------------------------------------------------------------------------------ |
-| **`source`** | Source Schema | _Optional_   | The base path or Git source (local path, Git URL, or `github://` shorthand). Defaults to `.` (the ESPHome config folder). |
-| **`minify`** | Boolean       | _Optional_   | Enable compile-time minification for HTML, CSS, JS, JSON, and `.webmanifest` assets. Defaults to `true`.                  |
-| **`files`**  | List of Files | **Required** | The list of static asset files to map and compile under this source.                                                      |
+| **`source`**        | Source Schema | _Optional_   | The base path or Git source (local path, Git URL, or `github://` shorthand). Defaults to `.` (the ESPHome config folder). |
+| **`minify`**        | Boolean       | _Optional_   | Enable compile-time minification for HTML, CSS, JS, JSON, and `.webmanifest` assets. Defaults to `true`.                  |
+| **`cache_control`** | String        | _Optional_   | Default HTTP `Cache-Control` response header for all files in this block (omitted by default).                            |
+| **`files`**         | List of Files | **Required** | The list of static asset files to map and compile under this source.                                                      |
 
 ### File Definition (`files:`)
 
-| Variable           | Type          | Requirement  | Description                                                                         |
-| :----------------- | :------------ | :----------- | :---------------------------------------------------------------------------------- |
-| **`id`**           | ID            | **Required** | The internal identifier for the asset instance.                                     |
-| **`file`**         | String / Path | **Required** | The file path to compile (resolved relative to the global `source` folder).         |
-| **`url`**          | String        | **Required** | The URL endpoint path where the asset will be served (e.g. `/`, `/thermostat`).     |
-| **`content_type`** | String        | _Optional_   | Mime type of the resource. By default, it is auto-detected from the file extension. |
-| **`minify`**       | Boolean       | _Optional_   | Override the global `minify` setting for this specific file.                        |
+| Variable            | Type          | Requirement  | Description                                                                                                                |
+| :------------------ | :------------ | :----------- | :------------------------------------------------------------------------------------------------------------------------- |
+| **`id`**            | ID            | **Required** | The internal identifier for the asset instance.                                                                            |
+| **`file`**          | String / Path | **Required** | The file path to compile (resolved relative to the global `source` folder).                                                |
+| **`url`**           | String        | **Required** | The URL endpoint path where the asset will be served (e.g. `/`, `/thermostat`).                                            |
+| **`content_type`**  | String        | _Optional_   | Mime type of the resource. By default, it is auto-detected from the file extension.                                        |
+| **`minify`**        | Boolean       | _Optional_   | Override the global `minify` setting for this specific file.                                                               |
+| **`cache_control`** | String        | _Optional_   | Override the global `cache_control` header for this file. Set to `""` to omit an inherited global header.                 |
 
 ---
 
