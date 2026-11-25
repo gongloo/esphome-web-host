@@ -150,3 +150,99 @@ Embed version numbers dynamically inside your HTML/JS:
 ```
 
 It will be replaced at compile-time with the version specified under your YAML's `esphome.project.version` block.
+
+---
+
+## 📱 Hosting PWAs with `pwa_host`
+
+This repository also provides **`pwa_host`**, a companion component built on top of `web_host` that eliminates duplicated `sw.js` and `manifest.webmanifest` boilerplate across ESPHome PWA projects.
+
+### ✨ `pwa_host` Features
+
+- **Auto-Generated `sw.js`**: Generates an ESP32/ESP8266-safe Service Worker with sequential precaching (avoiding lwIP socket exhaustion), deterministic content-hash `CACHE_NAME` busting on OTA updates, reverse-proxy-safe `new URL(asset, self.location.href)` scoping, `{ ignoreSearch: true }` offline fallback, and `Cache-Control: no-cache` by default.
+- **Per-Asset Caching Strategies**: Defaults to `network_first`, with per-file `cache_first` or `stale_while_revalidate` overrides (e.g., for large `.glb` models or decoder scripts).
+- **Auto-Generated `manifest.webmanifest`**: Defaults `name`/`short_name` from `esphome.friendly_name`/`esphome.name`, serves with `application/manifest+json`, and auto-reads PNG icon dimensions when `sizes` is omitted (skipped automatically if you supply your own manifest file).
+- **Multi-Source & Multi-PWA Ready**: Supports multiple `sources:` groups per PWA (including remote Git repos) and `MULTI_CONF` under different `base_path` prefixes with prefix-isolated cache eviction.
+- **Subpath Landing Page & Redirect**: When `base_path` is non-root (e.g. `"/level/"`), `pwa_host` automatically serves the designated landing page at `/level/` (sharing the `PROGMEM` data with zero duplicate flash) and adds a relative `/level` → `level/` redirect so relative URLs and SW scopes resolve correctly.
+
+### Single-Source PWA Example
+
+```yaml
+external_components:
+  - source: github://gongloo/esphome-web-host@main
+    components: [web_host, pwa_host]
+
+pwa_host:
+  name: "HyHeat"
+  start_url: "thermostat"
+  theme_color: "#0c0c0e"
+  background_color: "#0c0c0e"
+  icons:
+    - file: "data/htdocs/apple-touch-icon.png"
+      url: "apple-touch-icon.png"
+      purpose: "any maskable"
+  files:
+    - file: "data/htdocs/thermostat.html"
+      url: "thermostat"
+      aliases: ["thermostat.html"]
+    - file: "data/htdocs/icon-96.png"
+      url: "icon-96.png"
+    - file: "data/htdocs/favicon.ico"
+      url: "favicon.ico"
+```
+
+### Multi-Source & Subpath PWA Example
+
+```yaml
+pwa_host:
+  - id: rv_level_pwa
+    base_path: "/level/"
+    name: "RV Level"
+    landing_page: "level"
+    orientation: any
+    theme_color: "#070E1B"
+    background_color: "#070E1B"
+    icons:
+      - file: "data/htdocs/apple-touch-icon.png"
+        url: "apple-touch-icon.png"
+    sources:
+      - files:
+          - file: "data/htdocs/level.html"
+            url: "level"
+            aliases: ["level.html"]
+          - file: "data/htdocs/ProMaster_2015_White_meshopt.glb"
+            url: "ProMaster_2015_White_meshopt.glb"
+            content_type: "model/gltf-binary"
+            strategy: stale_while_revalidate
+      - source:
+          type: git
+          url: https://github.com/zeux/meshoptimizer.git
+          ref: v1.3
+          path: js
+        files:
+          - file: "meshopt_decoder_reference.js"
+            url: "meshopt_decoder.js"
+            strategy: stale_while_revalidate
+```
+
+### `pwa_host` Configuration Variables
+
+| Variable                  | Type           | Default                      | Description                                                                                               |
+| :------------------------ | :------------- | :--------------------------- | :-------------------------------------------------------------------------------------------------------- |
+| **`id`**                  | Name           | _Optional_                   | Identifier for this PWA instance (also used as the default `CACHE_NAME` prefix).                          |
+| **`base_path`**           | String         | `"/"`                        | URL prefix where the PWA is mounted. Non-root paths add a trailing-slash redirect and landing alias.      |
+| **`name` / `short_name`** | String         | `esphome.friendly_name`      | Web App Manifest display names.                                                                           |
+| **`start_url`**           | String         | `"./"` (subpath) / landing   | Manifest `start_url` (relative to `base_path`).                                                           |
+| **`landing_page`**        | String         | Auto (`index.html`/first HTML) | Asset `url` or `file` to serve directly at `base_path` for subpath PWAs.                                  |
+| **`display`**             | String         | `"standalone"`               | Manifest `display` mode (`fullscreen`, `standalone`, `minimal-ui`, `browser`).                            |
+| **`orientation`**         | String         | _Optional_                   | Manifest `orientation` (e.g. `any`, `portrait`).                                                          |
+| **`theme_color`**         | String         | _Optional_                   | Manifest `theme_color`.                                                                                   |
+| **`background_color`**    | String         | _Optional_                   | Manifest `background_color`.                                                                              |
+| **`manifest_url`**        | String         | `"manifest.webmanifest"`     | Manifest URL relative to `base_path`.                                                                     |
+| **`generate_manifest`**   | Boolean        | `true`                       | Auto-generate the manifest unless disabled or explicitly provided in `files:`.                            |
+| **`source`**              | Source Schema  | _Optional_                   | Base path or Git source for top-level `files:` and `icons:` (falls back to declaring YAML directory).     |
+| **`minify`**              | Boolean        | `true`                       | Default compile-time minification setting across `files:`, `sources:`, `manifest`, and `sw.js`.           |
+| **`cache_control`**       | String         | _Optional_                   | Default `Cache-Control` header for PWA files and generated manifest (`sw.js` defaults to `"no-cache"`).   |
+| **`icons`**               | List of Icons  | `[]`                         | Extends `web_host` file fields with optional `sizes` (auto-detected for PNGs) and `purpose` (`"any"`).    |
+| **`files` / `sources`**   | List           | **One required**             | Single-source `files:` list or multi-source `sources:` groups. Per-file options add `strategy`, `precache` (`true`), and `aliases` (`[]`, SW-intercepted offline fallback paths). |
+| **`service_worker`**      | Object         | `{}`                         | Sub-options: `enabled` (`true`), `url` (`"sw.js"`), `strategy` (`network_first`), `cache_name_prefix`, `cache_control` (`"no-cache"`), `minify`. |

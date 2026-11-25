@@ -14,6 +14,7 @@ MULTI_CONF = True
 
 web_host_ns = cg.esphome_ns.namespace("web_host")
 WebHostComponent = web_host_ns.class_("WebHostComponent", cg.Component)
+WebRedirectComponent = web_host_ns.class_("WebRedirectComponent", cg.Component)
 
 CONF_FILE = "file"
 CONF_FILES = "files"
@@ -92,13 +93,15 @@ def get_declaring_yaml_dir(config):
                 return os.path.dirname(os.path.abspath(doc))
     return None
 
-def resolve_file_path(config, file_path, source_dir):
+def resolve_file_path(config, file_path, source_dir, fallback_config=None):
     from esphome.core import CORE
 
     if source_dir is not None:
         return os.path.join(source_dir, file_path)
 
     declaring_yaml_dir = get_declaring_yaml_dir(config)
+    if declaring_yaml_dir is None and fallback_config is not None:
+        declaring_yaml_dir = get_declaring_yaml_dir(fallback_config)
     if not os.path.isabs(file_path) and declaring_yaml_dir is not None:
         path = os.path.join(declaring_yaml_dir, file_path)
         if os.path.exists(path):
@@ -139,13 +142,15 @@ FILE_SCHEMA = cv.Schema({
     cv.Optional(CONF_CACHE_CONTROL): validate_cache_control,
 }).extend(cv.COMPONENT_SCHEMA)
 
+ASSET_GROUP_SCHEMA = cv.Schema({
+    cv.Optional(CONF_SOURCE): cv.SOURCE_SCHEMA,
+    cv.Optional(CONF_MINIFY, default=True): cv.boolean,
+    cv.Optional(CONF_CACHE_CONTROL): validate_cache_control,
+    cv.Required(CONF_FILES): cv.ensure_list(FILE_SCHEMA),
+})
+
 CONFIG_SCHEMA = cv.All(
-    cv.Schema({
-        cv.Optional(CONF_SOURCE): cv.SOURCE_SCHEMA,
-        cv.Optional(CONF_MINIFY, default=True): cv.boolean,
-        cv.Optional(CONF_CACHE_CONTROL): validate_cache_control,
-        cv.Required(CONF_FILES): cv.ensure_list(FILE_SCHEMA),
-    }),
+    ASSET_GROUP_SCHEMA,
     validate_web_host,
 )
 
@@ -179,73 +184,54 @@ def get_mdi_path(icon_name):
 
     raise RuntimeError(f"Icon path not found in fetched SVG for '{icon_name}'")
 
-async def to_code(config):
+def preprocess_and_compress(file_content, content_type, source_label="<generated>", should_minify=True):
     from esphome.core import CORE
-    
-    if CONF_SOURCE in config:
-        source_dir = resolve_source_path(config[CONF_SOURCE])
-    else:
-        source_dir = None
-        
-    for file_config in config[CONF_FILES]:
-        file_path = file_config[CONF_FILE]
-        url = file_config[CONF_URL]
-        
-        resolved_path = resolve_file_path(config, file_path, source_dir)
-            
-        if CONF_CONTENT_TYPE in file_config:
-            content_type = file_config[CONF_CONTENT_TYPE]
-        else:
-            content_type = detect_content_type(resolved_path)
-            
-        # Read resource as bytes
-        with open(resolved_path, "rb") as f:
-            file_content = f.read()
 
-        # Preprocess all <svg ... data-mdi="icon_name">...</svg> elements for HTML files
-        if content_type == "text/html":
-            try:
-                html_text = file_content.decode("utf-8")
+    # Preprocess all <svg ... data-mdi="icon_name">...</svg> elements for HTML files
+    if content_type == "text/html":
+        try:
+            html_text = file_content.decode("utf-8")
 
-                # Replace ${version} placeholder with actual project version from configuration
-                version_str = "unknown"
-                if 'esphome' in CORE.config:
-                    esphome_conf = CORE.config['esphome']
-                    if 'project' in esphome_conf:
-                        version_str = esphome_conf['project'].get('version', 'unknown')
-                html_text = html_text.replace("${version}", version_str)
+            # Replace ${version} placeholder with actual project version from configuration
+            version_str = "unknown"
+            if "esphome" in CORE.config:
+                esphome_conf = CORE.config["esphome"]
+                if "project" in esphome_conf:
+                    version_str = esphome_conf["project"].get("version", "unknown")
+            html_text = html_text.replace("${version}", version_str)
 
-                import re
-                pattern = r'(<svg\b[^>]*data-mdi="([^"]+)"[^>]*>)(.*?)(</svg>)'
-                
-                def mdi_replacer(match):
-                    opening_tag = match.group(1)
-                    icon_name = match.group(2)
-                    try:
-                        path_data = get_mdi_path(icon_name)
-                        return f'{opening_tag}<path d="{path_data}"/></svg>'
-                    except Exception as e:
-                        _LOGGER.warning("Failed to inline MDI icon '%s': %s", icon_name, e)
-                        return match.group(0)
-                        
-                html_text = re.sub(pattern, mdi_replacer, html_text, flags=re.DOTALL)
-                file_content = html_text.encode("utf-8")
-            except UnicodeDecodeError:
-                pass
+            import re
+            pattern = r'(<svg\b[^>]*data-mdi="([^"]+)"[^>]*>)(.*?)(</svg>)'
 
-        should_minify = file_config.get(CONF_MINIFY, config[CONF_MINIFY])
-        if should_minify:
-            file_content = minify_content(file_content, content_type, resolved_path)
+            def mdi_replacer(match):
+                opening_tag = match.group(1)
+                icon_name = match.group(2)
+                try:
+                    path_data = get_mdi_path(icon_name)
+                    return f'{opening_tag}<path d="{path_data}"/></svg>'
+                except Exception as e:
+                    _LOGGER.warning("Failed to inline MDI icon '%s': %s", icon_name, e)
+                    return match.group(0)
 
-        gzipped_bytes = gzip.compress(file_content, compresslevel=9, mtime=0)
-        use_gzip = len(gzipped_bytes) < len(file_content)
-        payload_bytes = gzipped_bytes if use_gzip else file_content
-        hex_bytes_str = ", ".join(f"0x{b:02x}" for b in payload_bytes)
+            html_text = re.sub(pattern, mdi_replacer, html_text, flags=re.DOTALL)
+            file_content = html_text.encode("utf-8")
+        except UnicodeDecodeError:
+            pass
 
-        # Generate a unique variable name based on the C++ variable ID to avoid collisions
-        var_id = str(file_config[CONF_ID])
-        
-        header_content = f"""#pragma once
+    if should_minify:
+        file_content = minify_content(file_content, content_type, source_label)
+
+    gzipped_bytes = gzip.compress(file_content, compresslevel=9, mtime=0)
+    use_gzip = len(gzipped_bytes) < len(file_content)
+    payload_bytes = gzipped_bytes if use_gzip else file_content
+    return payload_bytes, use_gzip
+
+
+def emit_progmem_header(var_id, payload_bytes):
+    from esphome.core import CORE
+
+    hex_bytes_str = ", ".join(f"0x{b:02x}" for b in payload_bytes)
+    header_content = f"""#pragma once
 #include "esphome/core/progmem.h"
 #include <stddef.h>
 
@@ -254,42 +240,126 @@ constexpr uint8_t {var_id}_WEB_HOST_DATA[] PROGMEM = {{{hex_bytes_str}}};
 constexpr size_t {var_id}_WEB_HOST_DATA_SIZE = {len(payload_bytes)};
 """
 
-        build_dir = os.path.join(CORE.build_path, "src")
-        os.makedirs(build_dir, exist_ok=True)
-        header_filename = f"{var_id}_web_host.h"
-        output_header_path = os.path.join(build_dir, header_filename)
+    build_dir = os.path.join(CORE.build_path, "src")
+    os.makedirs(build_dir, exist_ok=True)
+    header_filename = f"{var_id}_web_host.h"
+    output_header_path = os.path.join(build_dir, header_filename)
 
-        header_changed = True
-        if os.path.exists(output_header_path):
-            with open(output_header_path, "r", encoding="utf-8") as f:
-                if f.read() == header_content:
-                    header_changed = False
+    header_changed = True
+    if os.path.exists(output_header_path):
+        with open(output_header_path, "r", encoding="utf-8") as f:
+            if f.read() == header_content:
+                header_changed = False
 
-        if header_changed:
-            with open(output_header_path, "w", encoding="utf-8") as f:
-                f.write(header_content)
+    if header_changed:
+        with open(output_header_path, "w", encoding="utf-8") as f:
+            f.write(header_content)
 
-            # Invalidate ESPHome's build_info cache so build_info_data.cpp and
-            # build_info.json are regenerated with a fresh build timestamp even
-            # when only included web assets changed (no YAML changes).
-            build_info_path = os.path.join(CORE.build_path, "build_info.json")
-            try:
-                os.remove(build_info_path)
-            except FileNotFoundError:
-                pass
-            
-        # Include header dynamically in ESPHome build
-        cg.add_global(cg.RawStatement(f'#include "{header_filename}"'))
+        # Invalidate ESPHome's build_info cache so build_info_data.cpp and
+        # build_info.json are regenerated with a fresh build timestamp even
+        # when only included web assets changed (no YAML changes).
+        build_info_path = os.path.join(CORE.build_path, "build_info.json")
+        try:
+            os.remove(build_info_path)
+        except FileNotFoundError:
+            pass
 
+    # Include header dynamically in ESPHome build
+    cg.add_global(cg.RawStatement(f'#include "{header_filename}"'))
+
+
+async def register_bytes_asset(
+    var_id,
+    url,
+    content_bytes,
+    content_type,
+    source_label="<generated>",
+    should_minify=True,
+    cache_control="",
+    component_config=None,
+):
+    payload_bytes, use_gzip = preprocess_and_compress(
+        content_bytes,
+        content_type,
+        source_label=source_label,
+        should_minify=should_minify,
+    )
+    var_name = str(var_id)
+    emit_progmem_header(var_name, payload_bytes)
+
+    var = cg.new_Pvariable(
+        var_id,
+        url,
+        content_type,
+        cg.RawExpression(f"{var_name}_WEB_HOST_DATA"),
+        cg.RawExpression(f"{var_name}_WEB_HOST_DATA_SIZE"),
+        use_gzip,
+        cache_control,
+    )
+    await cg.register_component(var, component_config or {})
+    return var, payload_bytes, use_gzip
+
+
+async def register_alias_asset(
+    var_id,
+    url,
+    target_var_id,
+    content_type,
+    use_gzip,
+    cache_control="",
+    component_config=None,
+):
+    target_name = str(target_var_id)
+    var = cg.new_Pvariable(
+        var_id,
+        url,
+        content_type,
+        cg.RawExpression(f"{target_name}_WEB_HOST_DATA"),
+        cg.RawExpression(f"{target_name}_WEB_HOST_DATA_SIZE"),
+        use_gzip,
+        cache_control,
+    )
+    await cg.register_component(var, component_config or {})
+    return var
+
+
+async def register_redirect(var_id, from_url, to_url, component_config=None):
+    var = cg.new_Pvariable(var_id, from_url, to_url)
+    await cg.register_component(var, component_config or {})
+    return var
+
+
+async def to_code(config):
+    if CONF_SOURCE in config:
+        source_dir = resolve_source_path(config[CONF_SOURCE])
+    else:
+        source_dir = None
+
+    for file_config in config[CONF_FILES]:
+        file_path = file_config[CONF_FILE]
+        url = file_config[CONF_URL]
+
+        resolved_path = resolve_file_path(config, file_path, source_dir)
+
+        if CONF_CONTENT_TYPE in file_config:
+            content_type = file_config[CONF_CONTENT_TYPE]
+        else:
+            content_type = detect_content_type(resolved_path)
+
+        # Read resource as bytes
+        with open(resolved_path, "rb") as f:
+            file_content = f.read()
+
+        should_minify = file_config.get(CONF_MINIFY, config[CONF_MINIFY])
         cache_control = file_config.get(CONF_CACHE_CONTROL, config.get(CONF_CACHE_CONTROL, ""))
 
-        var = cg.new_Pvariable(
+        await register_bytes_asset(
             file_config[CONF_ID],
             url,
+            file_content,
             content_type,
-            cg.RawExpression(f"{var_id}_WEB_HOST_DATA"),
-            cg.RawExpression(f"{var_id}_WEB_HOST_DATA_SIZE"),
-            use_gzip,
-            cache_control,
+            source_label=resolved_path,
+            should_minify=should_minify,
+            cache_control=cache_control,
+            component_config=file_config,
         )
-        await cg.register_component(var, file_config)
