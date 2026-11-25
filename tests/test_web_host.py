@@ -65,7 +65,7 @@ class TestDetectContentType:
             ("styles.css", "text/css"),
             ("app.js", "application/javascript"),
             ("data.json", "application/json"),
-            ("manifest.webmanifest", "application/json"),
+            ("manifest.webmanifest", "application/manifest+json"),
             ("logo.png", "image/png"),
             ("favicon.ico", "image/x-icon"),
             ("icon.svg", "image/svg+xml"),
@@ -406,18 +406,14 @@ class TestToCodeGeneration:
                 "minify": True,
                 "files": [
                     {"id": "j_min", "file": "a.json", "url": "/a.json"},
-                    {
-                        "id": "j_manifest",
-                        "file": "b.webmanifest",
-                        "url": "/b.webmanifest",
-                        "content_type": "application/manifest+json",
-                    },
+                    {"id": "j_manifest", "file": "b.webmanifest", "url": "/b.webmanifest"},
                     {"id": "j_raw", "file": "c.json", "url": "/c.json", "minify": False},
                     {"id": "j_bad", "file": "bad.json", "url": "/bad.json"},
                 ],
             }
         )
-        self._run_to_code(config)
+        _, mock_new_pvar, _ = self._run_to_code(config)
+        assert mock_new_pvar.call_args_list[1].args[2] == "application/manifest+json"
 
         def read_asset(var_id):
             payload, _ = _extract_generated_payload(CORE.build_path / "src" / f"{var_id}_web_host.h")

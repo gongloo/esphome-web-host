@@ -36,7 +36,6 @@ web_host:
       - id: web_manifest
         file: "manifest.webmanifest"
         url: "/manifest.webmanifest"
-        content_type: "application/manifest+json"
       - id: web_config_json
         file: "config.json"
         url: "/config.json"

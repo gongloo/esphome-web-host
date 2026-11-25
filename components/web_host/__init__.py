@@ -42,8 +42,10 @@ def detect_content_type(filepath):
         return "text/css"
     elif ext == ".js":
         return "application/javascript"
-    elif ext == ".json" or ext == ".webmanifest":
+    elif ext == ".json":
         return "application/json"
+    elif ext == ".webmanifest":
+        return "application/manifest+json"
     elif ext == ".png":
         return "image/png"
     elif ext == ".ico":
