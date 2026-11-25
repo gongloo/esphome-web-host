@@ -32,6 +32,7 @@ web_host:
       - id: web_js
         file: "app.js"
         url: "/app.js"
+        cache_control: "no-cache"
       - id: web_manifest
         file: "manifest.webmanifest"
         url: "/manifest.webmanifest"
@@ -50,6 +51,7 @@ web_host:
       type: local
       path: "fixtures"
     minify: false
+    cache_control: "public, max-age=3600"
     files:
       - id: web_override_minify_on
         file: "config.json"

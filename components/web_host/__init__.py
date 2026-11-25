@@ -21,6 +21,7 @@ CONF_URL = "url"
 CONF_SOURCE = "source"
 CONF_CONTENT_TYPE = "content_type"
 CONF_MINIFY = "minify"
+CONF_CACHE_CONTROL = "cache_control"
 
 from esphome.const import (
     CONF_PATH,
@@ -121,18 +122,26 @@ def validate_web_host(config):
             
     return config
 
+def validate_cache_control(value):
+    value = cv.string(value)
+    if "\r" in value or "\n" in value:
+        raise cv.Invalid("cache_control must not contain newline characters")
+    return value
+
 FILE_SCHEMA = cv.Schema({
     cv.GenerateID(): cv.declare_id(WebHostComponent),
     cv.Required(CONF_FILE): cv.string,
     cv.Required(CONF_URL): cv.string,
     cv.Optional(CONF_CONTENT_TYPE): cv.string,
     cv.Optional(CONF_MINIFY): cv.boolean,
+    cv.Optional(CONF_CACHE_CONTROL): validate_cache_control,
 }).extend(cv.COMPONENT_SCHEMA)
 
 CONFIG_SCHEMA = cv.All(
     cv.Schema({
         cv.Optional(CONF_SOURCE): cv.SOURCE_SCHEMA,
         cv.Optional(CONF_MINIFY, default=True): cv.boolean,
+        cv.Optional(CONF_CACHE_CONTROL): validate_cache_control,
         cv.Required(CONF_FILES): cv.ensure_list(FILE_SCHEMA),
     }),
     validate_web_host,
@@ -269,7 +278,9 @@ constexpr size_t {var_id}_WEB_HOST_DATA_SIZE = {len(payload_bytes)};
             
         # Include header dynamically in ESPHome build
         cg.add_global(cg.RawStatement(f'#include "{header_filename}"'))
-        
+
+        cache_control = file_config.get(CONF_CACHE_CONTROL, config.get(CONF_CACHE_CONTROL, ""))
+
         var = cg.new_Pvariable(
             file_config[CONF_ID],
             url,
@@ -277,5 +288,6 @@ constexpr size_t {var_id}_WEB_HOST_DATA_SIZE = {len(payload_bytes)};
             cg.RawExpression(f"{var_id}_WEB_HOST_DATA"),
             cg.RawExpression(f"{var_id}_WEB_HOST_DATA_SIZE"),
             use_gzip,
+            cache_control,
         )
         await cg.register_component(var, file_config)
