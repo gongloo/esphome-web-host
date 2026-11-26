@@ -13,6 +13,19 @@
 namespace esphome {
 namespace web_host {
 
+#ifdef USE_WEBSERVER
+inline bool match_get_request_url(AsyncWebServerRequest *request, const std::string &target_url) {
+  if (request->method() != HTTP_GET)
+    return false;
+#ifdef USE_ESP32
+  char url_buf[AsyncWebServerRequest::URL_BUF_SIZE];
+  return request->url_to(url_buf) == target_url;
+#else
+  return request->url() == target_url.c_str();
+#endif
+}
+#endif
+
 class WebHostComponent : public Component {
  public:
   WebHostComponent(const std::string &url, const std::string &content_type, const uint8_t *html_data, size_t html_size,
@@ -35,14 +48,7 @@ class WebHostComponent : public Component {
         WebHostHandler(WebHostComponent *parent) : parent_(parent) {}
 
         bool canHandle(AsyncWebServerRequest *request) const override {
-          if (request->method() != HTTP_GET)
-            return false;
-#ifdef USE_ESP32
-          char url_buf[AsyncWebServerRequest::URL_BUF_SIZE];
-          return request->url_to(url_buf) == parent_->get_url();
-#else
-          return request->url() == parent_->get_url().c_str();
-#endif
+          return match_get_request_url(request, parent_->get_url());
         }
 
         void handleRequest(AsyncWebServerRequest *request) override {
@@ -79,6 +85,45 @@ class WebHostComponent : public Component {
   size_t html_size_;
   bool is_gzipped_;
   std::string cache_control_;
+};
+
+class WebRedirectComponent : public Component {
+ public:
+  WebRedirectComponent(const std::string &from_url, const std::string &to_url)
+      : from_url_(from_url), to_url_(to_url) {}
+
+  void setup() override {
+#ifdef USE_WEBSERVER
+    if (web_server_base::global_web_server_base != nullptr) {
+      class WebRedirectHandler : public AsyncWebHandler {
+       protected:
+        WebRedirectComponent *parent_;
+
+       public:
+        WebRedirectHandler(WebRedirectComponent *parent) : parent_(parent) {}
+
+        bool canHandle(AsyncWebServerRequest *request) const override {
+          return match_get_request_url(request, parent_->get_from_url());
+        }
+
+        void handleRequest(AsyncWebServerRequest *request) override {
+          request->redirect(parent_->get_to_url().c_str());
+        }
+      };
+
+      web_server_base::global_web_server_base->add_handler(new WebRedirectHandler(this));
+    }
+#endif
+  }
+
+  float get_setup_priority() const override { return setup_priority::WIFI - 1.0f; }
+
+  const std::string &get_from_url() const { return this->from_url_; }
+  const std::string &get_to_url() const { return this->to_url_; }
+
+ protected:
+  std::string from_url_;
+  std::string to_url_;
 };
 
 }  // namespace web_host

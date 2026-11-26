@@ -8,7 +8,7 @@ external_components:
   - source:
       type: local
       path: ../components
-    components: [web_host]
+    components: [web_host, pwa_host]
 
 wifi:
   ssid: "TestSSID"
@@ -56,3 +56,30 @@ web_host:
         file: "config.json"
         url: "/config-min.json"
         minify: true
+
+pwa_host:
+  - id: test_pwa
+    base_path: "/pwa"
+    name: "Web Host Test PWA"
+    theme_color: "#0c0c0e"
+    background_color: "#0c0c0e"
+    sources:
+      - source: "fixtures"
+        files:
+          - id: pwa_index
+            file: "index.html"
+            url: "app.html"
+            aliases: ["index.html"]
+          - id: pwa_css
+            file: "styles.css"
+            url: "styles.css"
+            strategy: stale_while_revalidate
+      - source:
+          type: local
+          path: "fixtures"
+        minify: false
+        files:
+          - id: pwa_js
+            file: "app.js"
+            url: "app.js"
+            strategy: cache_first
