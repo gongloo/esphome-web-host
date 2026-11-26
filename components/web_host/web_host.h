@@ -29,12 +29,12 @@ inline bool match_get_request_url(AsyncWebServerRequest *request, const std::str
 class WebHostComponent : public Component {
  public:
   WebHostComponent(const std::string &url, const std::string &content_type, const uint8_t *html_data, size_t html_size,
-                   bool is_gzipped = true, const std::string &cache_control = "")
+                   const std::string &content_encoding = "", const std::string &cache_control = "")
       : url_(url),
         content_type_(content_type),
         html_data_(html_data),
         html_size_(html_size),
-        is_gzipped_(is_gzipped),
+        content_encoding_(content_encoding),
         cache_control_(cache_control) {}
 
   void setup() override {
@@ -54,8 +54,8 @@ class WebHostComponent : public Component {
         void handleRequest(AsyncWebServerRequest *request) override {
           AsyncWebServerResponse *response = request->beginResponse(
               200, parent_->get_content_type().c_str(), parent_->get_html_data(), parent_->get_html_size());
-          if (parent_->is_gzipped()) {
-            response->addHeader("Content-Encoding", "gzip");
+          if (!parent_->get_content_encoding().empty()) {
+            response->addHeader("Content-Encoding", parent_->get_content_encoding().c_str());
           }
           if (!parent_->get_cache_control().empty()) {
             response->addHeader("Cache-Control", parent_->get_cache_control().c_str());
@@ -75,7 +75,7 @@ class WebHostComponent : public Component {
   const std::string &get_content_type() const { return this->content_type_; }
   const uint8_t *get_html_data() const { return this->html_data_; }
   size_t get_html_size() const { return this->html_size_; }
-  bool is_gzipped() const { return this->is_gzipped_; }
+  const std::string &get_content_encoding() const { return this->content_encoding_; }
   const std::string &get_cache_control() const { return this->cache_control_; }
 
  protected:
@@ -83,7 +83,7 @@ class WebHostComponent : public Component {
   std::string content_type_;
   const uint8_t *html_data_;
   size_t html_size_;
-  bool is_gzipped_;
+  std::string content_encoding_;
   std::string cache_control_;
 };
 

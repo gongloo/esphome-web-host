@@ -7,7 +7,7 @@ import re
 import struct
 
 import esphome.config_validation as cv
-from esphome.const import CONF_ID, CONF_URL
+from esphome.const import CONF_COMPRESSION, CONF_ID, CONF_URL
 
 try:
     from esphome.components import web_host
@@ -82,6 +82,7 @@ PWA_SOURCE_GROUP_SCHEMA = cv.Schema(
         cv.Optional(web_host.CONF_SOURCE): cv.SOURCE_SCHEMA,
         cv.Optional(web_host.CONF_MINIFY): cv.boolean,
         cv.Optional(web_host.CONF_CACHE_CONTROL): web_host.validate_cache_control,
+        cv.Optional(CONF_COMPRESSION): web_host.COMPRESSION_SCHEMA,
         cv.Required(web_host.CONF_FILES): cv.ensure_list(PWA_FILE_SCHEMA),
     }
 )
@@ -94,6 +95,7 @@ SERVICE_WORKER_SCHEMA = cv.Schema(
         cv.Optional(CONF_CACHE_NAME_PREFIX): cv.string,
         cv.Optional(web_host.CONF_CACHE_CONTROL, default="no-cache"): web_host.validate_cache_control,
         cv.Optional(web_host.CONF_MINIFY): cv.boolean,
+        cv.Optional(CONF_COMPRESSION): web_host.COMPRESSION_SCHEMA,
     }
 )
 
@@ -275,6 +277,7 @@ CONFIG_SCHEMA = cv.All(
             cv.Optional(web_host.CONF_SOURCE): cv.SOURCE_SCHEMA,
             cv.Optional(web_host.CONF_MINIFY, default=True): cv.boolean,
             cv.Optional(web_host.CONF_CACHE_CONTROL): web_host.validate_cache_control,
+            cv.Optional(CONF_COMPRESSION, default=web_host.COMPRESSION_GZIP): web_host.COMPRESSION_SCHEMA,
             cv.Optional(CONF_ICONS, default=[]): cv.ensure_list(PWA_ICON_SCHEMA),
             cv.Optional(web_host.CONF_FILES): cv.ensure_list(PWA_FILE_SCHEMA),
             cv.Optional(CONF_SOURCES): cv.ensure_list(PWA_SOURCE_GROUP_SCHEMA),
@@ -329,6 +332,7 @@ async def to_code(config):
     default_strategy = sw_cfg[CONF_STRATEGY]
     global_minify = config[web_host.CONF_MINIFY]
     global_cache_control = config.get(web_host.CONF_CACHE_CONTROL, "")
+    global_compression = config[CONF_COMPRESSION]
 
     hasher = hashlib.sha256()
     precache_urls: list[str] = []
@@ -352,11 +356,13 @@ async def to_code(config):
         should_minify = file_config.get(web_host.CONF_MINIFY, group_minify)
         group_cache_control = group_config.get(web_host.CONF_CACHE_CONTROL, global_cache_control)
         cache_control = file_config.get(web_host.CONF_CACHE_CONTROL, group_cache_control)
+        group_compression = group_config.get(CONF_COMPRESSION, global_compression)
+        compression = file_config.get(CONF_COMPRESSION, group_compression)
 
         full_url, sw_rel = join_base_url(base_path, file_config[web_host.CONF_URL])
         var_id = _resolve_id(file_config[CONF_ID])
 
-        _, payload_bytes, use_gzip = await web_host.register_bytes_asset(
+        _, payload_bytes, content_encoding = await web_host.register_bytes_asset(
             var_id,
             full_url,
             file_content,
@@ -365,6 +371,7 @@ async def to_code(config):
             should_minify=should_minify,
             cache_control=cache_control,
             component_config=file_config,
+            compression=compression,
         )
 
         strategy = file_config.get(CONF_STRATEGY, default_strategy)
@@ -386,7 +393,7 @@ async def to_code(config):
                 "full_url": full_url,
                 "sw_rel": sw_rel,
                 "content_type": content_type,
-                "use_gzip": use_gzip,
+                "content_encoding": content_encoding,
                 "cache_control": cache_control,
                 "strategy": strategy,
                 "precache": precache,
@@ -423,7 +430,7 @@ async def to_code(config):
                 base_path,
                 landing_asset["var_id"],
                 landing_asset["content_type"],
-                landing_asset["use_gzip"],
+                landing_asset["content_encoding"],
                 cache_control=landing_asset["cache_control"],
             )
             if landing_asset["precache"]:
@@ -480,6 +487,7 @@ async def to_code(config):
             source_label=manifest_full_url,
             should_minify=global_minify,
             cache_control=global_cache_control,
+            compression=global_compression,
         )
         precache_urls.append(manifest_sw_rel)
         route_strategies[manifest_sw_rel] = default_strategy
@@ -517,6 +525,7 @@ async def to_code(config):
         )
         sw_id = _resolve_id(config[CONF_SW_ID])
         sw_minify = sw_cfg.get(web_host.CONF_MINIFY, global_minify)
+        sw_compression = sw_cfg.get(CONF_COMPRESSION, global_compression)
         await web_host.register_bytes_asset(
             sw_id,
             sw_full_url,
@@ -525,4 +534,5 @@ async def to_code(config):
             source_label=sw_full_url,
             should_minify=sw_minify,
             cache_control=sw_cfg[web_host.CONF_CACHE_CONTROL],
+            compression=sw_compression,
         )
