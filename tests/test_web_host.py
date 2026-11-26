@@ -12,6 +12,7 @@ from unittest.mock import patch
 import esphome.codegen as cg
 import esphome.config_validation as cv
 from esphome.const import (
+    CONF_COMPRESSION,
     CONF_ID,
     CONF_PATH,
     CONF_REF,
@@ -162,9 +163,41 @@ class TestSchemaValidation:
             }
         )
         assert validated[web_host.CONF_MINIFY] is True
+        assert validated[CONF_COMPRESSION] == "gzip"
         assert len(validated[web_host.CONF_FILES]) == 2
         assert validated[web_host.CONF_FILES][1][web_host.CONF_CONTENT_TYPE] == "text/plain"
         assert validated[web_host.CONF_FILES][1][web_host.CONF_MINIFY] is False
+
+    def test_compression_schema_and_overrides(self, tmp_path):
+        CORE.config_path = tmp_path / "device.yaml"
+        asset = tmp_path / "index.html"
+        asset.write_text("<h1>Hello</h1>", encoding="utf-8")
+
+        validated = web_host.CONFIG_SCHEMA(
+            {
+                "compression": "BR",
+                "files": [
+                    {"id": "web_br", "file": "index.html", "url": "/"},
+                    {
+                        "id": "web_gz",
+                        "file": "index.html",
+                        "url": "/gz",
+                        "compression": "gzip",
+                    },
+                ],
+            }
+        )
+        assert validated[CONF_COMPRESSION] == "br"
+        assert CONF_COMPRESSION not in validated[web_host.CONF_FILES][0]
+        assert validated[web_host.CONF_FILES][1][CONF_COMPRESSION] == "gzip"
+
+        with pytest.raises(cv.Invalid):
+            web_host.CONFIG_SCHEMA(
+                {
+                    "compression": "zstd",
+                    "files": [{"id": "web_bad", "file": "index.html", "url": "/"}],
+                }
+            )
 
     def test_missing_file_raises_invalid(self, tmp_path):
         CORE.config_path = tmp_path / "device.yaml"
@@ -349,11 +382,11 @@ class TestToCodeGeneration:
 
         assert len(registered) == 1
         mock_add_global.assert_called_once()
-        # Check new_Pvariable args: (id, url, content_type, data_expr, size_expr, use_gzip)
+        # Check new_Pvariable args: (id, url, content_type, data_expr, size_expr, content_encoding, cache_control)
         pvar_args = mock_new_pvar.call_args[0]
         assert pvar_args[1] == "/"
         assert pvar_args[2] == "text/html"
-        assert pvar_args[5] is True  # gzip applied
+        assert pvar_args[5] == "gzip"  # gzip applied
 
         header_path = CORE.build_path / "src" / "web_idx_web_host.h"
         payload, _ = _extract_generated_payload(header_path)
@@ -439,7 +472,7 @@ class TestToCodeGeneration:
 
         pvar_args = mock_new_pvar.call_args[0]
         assert pvar_args[2] == "application/octet-stream"
-        assert pvar_args[5] is False  # use_gzip must be False
+        assert pvar_args[5] == ""  # content_encoding must be empty when skipped
 
         payload, size = _extract_generated_payload(CORE.build_path / "src" / "tiny_id_web_host.h")
         assert payload == raw_bytes
@@ -518,6 +551,106 @@ class TestToCodeGeneration:
         _, mock_new_pvar, _ = self._run_to_code(override_config)
         cache_controls = [call.args[6] for call in mock_new_pvar.call_args_list]
         assert cache_controls == ["public, max-age=3600", "no-cache", ""]
+
+    def test_zopfli_opportunistic_and_fallback_warning(self, tmp_path, caplog, monkeypatch):
+        CORE.config_path = tmp_path / "device.yaml"
+        (tmp_path / "a.html").write_text("<p>" + ("repeat-" * 40) + "</p>", encoding="utf-8")
+        (tmp_path / "b.html").write_text("<p>" + ("again-" * 40) + "</p>", encoding="utf-8")
+
+        config = web_host.CONFIG_SCHEMA(
+            {
+                "files": [
+                    {"id": "z_a", "file": "a.html", "url": "/a"},
+                    {"id": "z_b", "file": "b.html", "url": "/b"},
+                ]
+            }
+        )
+
+        # 1. When zopfli is unavailable, falls back to stdlib gzip and logs a warning once
+        monkeypatch.setattr(web_host, "_ZOPFLI_WARNING_LOGGED", False)
+        real_import = __import__
+
+        def import_without_zopfli(name, *args, **kwargs):
+            if name == "zopfli.gzip" or name.startswith("zopfli."):
+                raise ImportError("No module named 'zopfli'")
+            return real_import(name, *args, **kwargs)
+
+        with (
+            patch("builtins.__import__", side_effect=import_without_zopfli),
+            caplog.at_level(logging.WARNING, logger="web_host"),
+        ):
+            _, mock_new_pvar, _ = self._run_to_code(config)
+
+        zopfli_warnings = [r for r in caplog.records if "zopfli" in r.message.lower()]
+        assert len(zopfli_warnings) == 1
+        assert [c.args[5] for c in mock_new_pvar.call_args_list] == ["gzip", "gzip"]
+
+        # 2. When zopfli is available, uses zopfli.gzip.compress without warning
+        caplog.clear()
+        monkeypatch.setattr(web_host, "_ZOPFLI_WARNING_LOGGED", False)
+        zopfli_calls = []
+
+        def fake_zopfli_compress(data):
+            zopfli_calls.append(data)
+            return gzip.compress(data, compresslevel=9, mtime=0)
+
+        fake_zopfli_gzip = SimpleNamespace(compress=fake_zopfli_compress)
+        fake_zopfli_pkg = SimpleNamespace(gzip=fake_zopfli_gzip)
+        with (
+            patch.dict(sys.modules, {"zopfli": fake_zopfli_pkg, "zopfli.gzip": fake_zopfli_gzip}),
+            caplog.at_level(logging.WARNING, logger="web_host"),
+        ):
+            _, mock_new_pvar, _ = self._run_to_code(config)
+
+        assert len(zopfli_calls) == 2
+        assert [r for r in caplog.records if "zopfli" in r.message.lower()] == []
+        assert [c.args[5] for c in mock_new_pvar.call_args_list] == ["gzip", "gzip"]
+
+    def test_brotli_compression_and_missing_package_error(self, tmp_path):
+        brotli = pytest.importorskip("brotli")
+        CORE.config_path = tmp_path / "device.yaml"
+        html_content = "<html><body><p>" + ("brotli-test-" * 40) + "</p></body></html>"
+        (tmp_path / "index.html").write_text(html_content, encoding="utf-8")
+        (tmp_path / "tiny.bin").write_bytes(b"OK")
+
+        config = web_host.CONFIG_SCHEMA(
+            {
+                "compression": "br",
+                "files": [
+                    {"id": "br_idx", "file": "index.html", "url": "/"},
+                    {"id": "br_tiny", "file": "tiny.bin", "url": "/tiny"},
+                    {
+                        "id": "gz_override",
+                        "file": "index.html",
+                        "url": "/gz",
+                        "compression": "gzip",
+                    },
+                ],
+            }
+        )
+        _, mock_new_pvar, _ = self._run_to_code(config)
+        encodings = [c.args[5] for c in mock_new_pvar.call_args_list]
+        assert encodings == ["br", "", "gzip"]
+
+        br_payload, _ = _extract_generated_payload(CORE.build_path / "src" / "br_idx_web_host.h")
+        assert brotli.decompress(br_payload).decode("utf-8") == html_content
+
+        # Missing brotli/brotlicffi raises an explicit RuntimeError
+        real_import = __import__
+
+        def import_without_brotli(name, *args, **kwargs):
+            if name in ("brotli", "brotlicffi"):
+                raise ImportError(f"No module named '{name}'")
+            return real_import(name, *args, **kwargs)
+
+        with patch("builtins.__import__", side_effect=import_without_brotli):
+            with pytest.raises(RuntimeError, match="brotli"):
+                web_host.preprocess_and_compress(
+                    b"hello" * 50,
+                    "text/plain",
+                    should_minify=False,
+                    compression="br",
+                )
 
 
 class TestHtmlCssJsMinification:

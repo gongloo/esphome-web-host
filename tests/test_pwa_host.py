@@ -401,3 +401,38 @@ class TestPwaHostCodegen:
 
         mock_new_pvar, _ = _run_to_code(config)
         assert len(mock_new_pvar.call_args_list) == 3
+
+    def test_compression_inheritance_and_overrides(self, tmp_path):
+        brotli = pytest.importorskip("brotli")
+        CORE.config_path = tmp_path / "device.yaml"
+        body = "repeat-" * 40
+        (tmp_path / "index.html").write_text(f"<html><body>{body}</body></html>", encoding="utf-8")
+        (tmp_path / "app.js").write_text(f"console.log('{body}');", encoding="utf-8")
+
+        config = pwa_host.CONFIG_SCHEMA(
+            {
+                "base_path": "/app",
+                "name": "BrApp",
+                "compression": "br",
+                "service_worker": {"compression": "gzip"},
+                "files": [
+                    {"file": "index.html", "url": "index.html"},
+                    {"file": "app.js", "url": "app.js", "compression": "gzip"},
+                ],
+            }
+        )
+        mock_new_pvar, _ = _run_to_code(config)
+        by_url = {c.args[1]: c.args for c in mock_new_pvar.call_args_list if len(c.args) > 3}
+
+        assert by_url["/app/index.html"][5] == "br"
+        assert by_url["/app/"][5] == "br"
+        assert by_url["/app/manifest.webmanifest"][5] == "br"
+        assert by_url["/app/app.js"][5] == "gzip"
+        assert by_url["/app/sw.js"][5] == "gzip"
+
+        manifest_id = by_url["/app/manifest.webmanifest"][0]
+        header_path = CORE.build_path / "src" / f"{manifest_id}_web_host.h"
+        arr_match = re.search(r"PROGMEM\s*=\s*\{([^}]*)\};", header_path.read_text(encoding="utf-8"), re.DOTALL)
+        assert arr_match is not None
+        br_bytes = bytes(int(x.strip(), 16) for x in arr_match.group(1).split(",") if x.strip())
+        assert json.loads(brotli.decompress(br_bytes))["name"] == "BrApp"

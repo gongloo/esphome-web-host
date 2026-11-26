@@ -9,7 +9,7 @@ Typically, ESPHome's web server is restricted to displaying standard entity dash
 ## ✨ Features
 
 - **Declarative Resource Mapping**: Map any local static file (HTML, CSS, JS, manifest, icons, images) to any URL route via clean YAML configuration.
-- **On-the-Fly Gzip Compression**: Assets are deterministically compressed during compile-time (`mtime=0`) and embedded as byte arrays in `PROGMEM` (Flash memory) whenever compression reduces the payload size, drastically reducing runtime RAM usage and flash size.
+- **Compile-Time Gzip (Zopfli) & Brotli Compression**: Assets are deterministically compressed at compile time (`gzip` by default, or `br` via `compression: br`) and embedded as byte arrays in `PROGMEM` (Flash memory) whenever compression reduces the payload size. When `zopfli` is installed, `gzip` mode automatically uses Zopfli for tighter compression (and logs a one-time warning if `zopfli` is missing).
 - **Automatic Asset Minification**: HTML, CSS, JS, JSON, and `.webmanifest` files are automatically minified at compile time (configurable via `minify`, enabled by default) using Python's stdlib (`json`, `html.parser`) and git-cached `rjsmin` / `rcssmin`.
 - **Dynamic MDI SVG Downloader & Inliner**: Natively pulls requested Material Design Icons using ESPHome's GitHub cache, parses their path definitions, and injects them directly into your HTML code before compilation.
 - **Configurable Version Substitutions**: Automatically replaces `${version}` placeholders in your HTML/resource code with your ESPHome project's declared version string.
@@ -109,6 +109,7 @@ web_host:
 | :----------- | :------------ | :----------- | :------------------------------------------------------------------------------------------------------------------------ |
 | **`source`**        | Source Schema | _Optional_   | The base path or Git source (local path, Git URL, or `github://` shorthand). Defaults to `.` (the ESPHome config folder). |
 | **`minify`**        | Boolean       | _Optional_   | Enable compile-time minification for HTML, CSS, JS, JSON, and `.webmanifest` assets. Defaults to `true`.                  |
+| **`compression`**   | String        | _Optional_   | Compression algorithm (`gzip` or `br`), matching ESPHome's `web_server` / `captive_portal` syntax. Defaults to `gzip`.    |
 | **`cache_control`** | String        | _Optional_   | Default HTTP `Cache-Control` response header for all files in this block (omitted by default).                            |
 | **`files`**         | List of Files | **Required** | The list of static asset files to map and compile under this source.                                                      |
 
@@ -121,6 +122,7 @@ web_host:
 | **`url`**           | String        | **Required** | The URL endpoint path where the asset will be served (e.g. `/`, `/thermostat`).                                            |
 | **`content_type`**  | String        | _Optional_   | Mime type of the resource. By default, it is auto-detected from the file extension.                                        |
 | **`minify`**        | Boolean       | _Optional_   | Override the global `minify` setting for this specific file.                                                               |
+| **`compression`**   | String        | _Optional_   | Override the global `compression` setting (`gzip` or `br`) for this specific file.                                         |
 | **`cache_control`** | String        | _Optional_   | Override the global `cache_control` header for this file. Set to `""` to omit an inherited global header.                 |
 
 ---
@@ -242,7 +244,8 @@ pwa_host:
 | **`generate_manifest`**   | Boolean        | `true`                       | Auto-generate the manifest unless disabled or explicitly provided in `files:`.                            |
 | **`source`**              | Source Schema  | _Optional_                   | Base path or Git source for top-level `files:` and `icons:` (falls back to declaring YAML directory).     |
 | **`minify`**              | Boolean        | `true`                       | Default compile-time minification setting across `files:`, `sources:`, `manifest`, and `sw.js`.           |
+| **`compression`**         | String         | `"gzip"`                     | Default compression algorithm (`gzip` or `br`) across `files:`, `sources:`, `manifest`, and `sw.js`.      |
 | **`cache_control`**       | String         | _Optional_                   | Default `Cache-Control` header for PWA files and generated manifest (`sw.js` defaults to `"no-cache"`).   |
 | **`icons`**               | List of Icons  | `[]`                         | Extends `web_host` file fields with optional `sizes` (auto-detected for PNGs) and `purpose` (`"any"`).    |
 | **`files` / `sources`**   | List           | **One required**             | Single-source `files:` list or multi-source `sources:` groups. Per-file options add `strategy`, `precache` (`true`), and `aliases` (`[]`, SW-intercepted offline fallback paths). |
-| **`service_worker`**      | Object         | `{}`                         | Sub-options: `enabled` (`true`), `url` (`"sw.js"`), `strategy` (`network_first`), `cache_name_prefix`, `cache_control` (`"no-cache"`), `minify`. |
+| **`service_worker`**      | Object         | `{}`                         | Sub-options: `enabled` (`true`), `url` (`"sw.js"`), `strategy` (`network_first`), `cache_name_prefix`, `cache_control` (`"no-cache"`), `minify`, `compression`. |

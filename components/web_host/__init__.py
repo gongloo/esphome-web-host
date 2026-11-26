@@ -25,7 +25,14 @@ CONF_CONTENT_TYPE = "content_type"
 CONF_MINIFY = "minify"
 CONF_CACHE_CONTROL = "cache_control"
 
+COMPRESSION_GZIP = "gzip"
+COMPRESSION_BR = "br"
+COMPRESSION_SCHEMA = cv.one_of(COMPRESSION_GZIP, COMPRESSION_BR, lower=True)
+
+_ZOPFLI_WARNING_LOGGED = False
+
 from esphome.const import (
+    CONF_COMPRESSION,
     CONF_PATH,
     CONF_REF,
     CONF_TYPE,
@@ -141,12 +148,14 @@ FILE_SCHEMA = cv.Schema({
     cv.Optional(CONF_CONTENT_TYPE): cv.string,
     cv.Optional(CONF_MINIFY): cv.boolean,
     cv.Optional(CONF_CACHE_CONTROL): validate_cache_control,
+    cv.Optional(CONF_COMPRESSION): COMPRESSION_SCHEMA,
 }).extend(cv.COMPONENT_SCHEMA)
 
 ASSET_GROUP_SCHEMA = cv.Schema({
     cv.Optional(CONF_SOURCE): cv.SOURCE_SCHEMA,
     cv.Optional(CONF_MINIFY, default=True): cv.boolean,
     cv.Optional(CONF_CACHE_CONTROL): validate_cache_control,
+    cv.Optional(CONF_COMPRESSION, default=COMPRESSION_GZIP): COMPRESSION_SCHEMA,
     cv.Required(CONF_FILES): cv.ensure_list(FILE_SCHEMA),
 })
 
@@ -185,7 +194,55 @@ def get_mdi_path(icon_name):
 
     raise RuntimeError(f"Icon path not found in fetched SVG for '{icon_name}'")
 
-def preprocess_and_compress(file_content, content_type, source_label="<generated>", should_minify=True):
+def _is_text_content_type(content_type):
+    ct = content_type.split(";", 1)[0].strip().lower()
+    return ct.startswith("text/") or ct in (
+        "application/javascript",
+        "application/json",
+        "application/manifest+json",
+        "image/svg+xml",
+    )
+
+
+def _compress_gzip(file_content):
+    global _ZOPFLI_WARNING_LOGGED
+    try:
+        import zopfli.gzip as zopfli_gzip
+
+        return zopfli_gzip.compress(file_content)
+    except ImportError:
+        if not _ZOPFLI_WARNING_LOGGED:
+            _LOGGER.warning(
+                "Python package 'zopfli' is not installed; falling back to standard gzip "
+                "(install 'zopfli' for smaller gzipped web assets)."
+            )
+            _ZOPFLI_WARNING_LOGGED = True
+        return gzip.compress(file_content, compresslevel=9, mtime=0)
+
+
+def _compress_brotli(file_content, content_type):
+    try:
+        import brotli
+    except ImportError:
+        try:
+            import brotlicffi as brotli
+        except ImportError as exc:
+            raise RuntimeError(
+                "Brotli compression requested ('compression: br'), but neither 'brotli' nor "
+                "'brotlicffi' Python package is installed."
+            ) from exc
+
+    mode = brotli.MODE_TEXT if _is_text_content_type(content_type) else brotli.MODE_GENERIC
+    return brotli.compress(file_content, mode=mode, quality=11)
+
+
+def preprocess_and_compress(
+    file_content,
+    content_type,
+    source_label="<generated>",
+    should_minify=True,
+    compression=COMPRESSION_GZIP,
+):
     from esphome.core import CORE
 
     # Preprocess all <svg ... data-mdi="icon_name">...</svg> elements for HTML files
@@ -222,10 +279,16 @@ def preprocess_and_compress(file_content, content_type, source_label="<generated
     if should_minify:
         file_content = minify_content(file_content, content_type, source_label)
 
-    gzipped_bytes = gzip.compress(file_content, compresslevel=9, mtime=0)
-    use_gzip = len(gzipped_bytes) < len(file_content)
-    payload_bytes = gzipped_bytes if use_gzip else file_content
-    return payload_bytes, use_gzip
+    if compression == COMPRESSION_BR:
+        compressed_bytes = _compress_brotli(file_content, content_type)
+    elif compression == COMPRESSION_GZIP:
+        compressed_bytes = _compress_gzip(file_content)
+    else:
+        raise ValueError(f"Unsupported compression algorithm: {compression}")
+
+    if len(compressed_bytes) < len(file_content):
+        return compressed_bytes, compression
+    return file_content, ""
 
 
 def emit_progmem_header(var_id, payload_bytes):
@@ -278,12 +341,14 @@ async def register_bytes_asset(
     should_minify=True,
     cache_control="",
     component_config=None,
+    compression=COMPRESSION_GZIP,
 ):
-    payload_bytes, use_gzip = preprocess_and_compress(
+    payload_bytes, content_encoding = preprocess_and_compress(
         content_bytes,
         content_type,
         source_label=source_label,
         should_minify=should_minify,
+        compression=compression,
     )
     var_name = str(var_id)
     emit_progmem_header(var_name, payload_bytes)
@@ -294,11 +359,11 @@ async def register_bytes_asset(
         content_type,
         cg.RawExpression(f"{var_name}_WEB_HOST_DATA"),
         cg.RawExpression(f"{var_name}_WEB_HOST_DATA_SIZE"),
-        use_gzip,
+        content_encoding,
         cache_control,
     )
     await cg.register_component(var, component_config or {})
-    return var, payload_bytes, use_gzip
+    return var, payload_bytes, content_encoding
 
 
 async def register_alias_asset(
@@ -306,7 +371,7 @@ async def register_alias_asset(
     url,
     target_var_id,
     content_type,
-    use_gzip,
+    content_encoding,
     cache_control="",
     component_config=None,
 ):
@@ -317,7 +382,7 @@ async def register_alias_asset(
         content_type,
         cg.RawExpression(f"{target_name}_WEB_HOST_DATA"),
         cg.RawExpression(f"{target_name}_WEB_HOST_DATA_SIZE"),
-        use_gzip,
+        content_encoding,
         cache_control,
     )
     await cg.register_component(var, component_config or {})
@@ -353,6 +418,7 @@ async def to_code(config):
 
         should_minify = file_config.get(CONF_MINIFY, config[CONF_MINIFY])
         cache_control = file_config.get(CONF_CACHE_CONTROL, config.get(CONF_CACHE_CONTROL, ""))
+        compression = file_config.get(CONF_COMPRESSION, config[CONF_COMPRESSION])
 
         await register_bytes_asset(
             file_config[CONF_ID],
@@ -363,4 +429,5 @@ async def to_code(config):
             should_minify=should_minify,
             cache_control=cache_control,
             component_config=file_config,
+            compression=compression,
         )
