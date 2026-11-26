@@ -20,6 +20,7 @@ CODEOWNERS = ["@gongloo"]
 DEPENDENCIES = ["web_server_base"]
 AUTO_LOAD = ["web_host"]
 MULTI_CONF = True
+MULTI_CONF_NO_DEFAULT = True
 
 CONF_BASE_PATH = "base_path"
 CONF_NAME = "name"

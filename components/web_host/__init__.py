@@ -11,6 +11,7 @@ _LOGGER = logging.getLogger(__name__)
 CODEOWNERS = ["@gongloo"]
 DEPENDENCIES = ["web_server_base"]
 MULTI_CONF = True
+MULTI_CONF_NO_DEFAULT = True
 
 web_host_ns = cg.esphome_ns.namespace("web_host")
 WebHostComponent = web_host_ns.class_("WebHostComponent", cg.Component)

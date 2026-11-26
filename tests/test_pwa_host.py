@@ -128,6 +128,55 @@ class TestPwaHostValidation:
                 }
             )
 
+    def test_pwa_host_only_yaml_autoloads_web_host_without_error(self, tmp_path):
+        from esphome.config import read_config
+        from esphome.loader import clear_component_meta_finders
+
+        assert web_host.MULTI_CONF_NO_DEFAULT is True
+        assert pwa_host.MULTI_CONF_NO_DEFAULT is True
+
+        (tmp_path / "index.html").write_text("<html>Only PWA</html>", encoding="utf-8")
+        yaml_path = tmp_path / "pwa_only.yaml"
+        yaml_path.write_text(
+            f"""esphome:
+  name: pwa-only-test
+
+esp32:
+  board: esp32dev
+  framework:
+    type: esp-idf
+
+external_components:
+  - source:
+      type: local
+      path: {COMPONENTS_DIR}
+    components: [web_host, pwa_host]
+
+wifi:
+  ssid: "TestSSID"
+  password: "TestPassword"
+
+web_server:
+  local: true
+
+pwa_host:
+  files:
+    - file: "index.html"
+      url: "/app"
+""",
+            encoding="utf-8",
+        )
+
+        CORE.config_path = yaml_path
+        try:
+            validated = read_config({})
+            assert validated is not None
+            assert validated.errors == []
+            assert validated.get("web_host") == []
+            assert len(validated.get("pwa_host", [])) == 1
+        finally:
+            clear_component_meta_finders()
+
 
 class TestPwaHostCodegen:
     def test_single_source_generates_manifest_and_sw(self, tmp_path):
